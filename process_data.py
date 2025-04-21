@@ -3,13 +3,14 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 import os
+import joblib # Needed for saving scalers
 
 # --- Configuration ---
 data_path = "pendulum_data/combined_pendulum_data.csv"
 sequence_length = 10  # Number of past time steps to use for prediction
 test_size = 0.15      # Percentage of runs for the test set
 validation_size = 0.15 # Percentage of runs for the validation set (from remaining)
-output_dir = "processed_data" # Directory to save processed data
+output_dir = "processed_data_sincos" # NEW: Directory for sin/cos data
 
 # --- Create Output Directory ---
 if not os.path.exists(output_dir):
@@ -22,33 +23,38 @@ print("Data loaded.")
 print(f"Total data points: {len(df)}")
 print(f"Number of unique runs: {df['run_id'].nunique()}")
 
+# --- Add Sin/Cos features ---
+print("Adding sin(theta) and cos(theta) features...")
+df['sin_theta'] = np.sin(df['theta'])
+df['cos_theta'] = np.cos(df['theta'])
+print("Features added.")
+
 # --- 2. Create Sequences and Targets ---
-# We will store features (X) and targets (y) along with their run_id
-X_sequences = [] # Input sequences: list of arrays, each array is (sequence_length, 2)
-y_targets = []   # Target states: list of arrays, each array is (2,)
+# Features will be [sin(theta), cos(theta), omega]
+# Targets will be [sin(theta_next), cos(theta_next), omega_next]
+feature_cols = ['sin_theta', 'cos_theta', 'omega'] # Define feature columns
+
+X_sequences = [] # Input sequences: list of arrays, each array is (sequence_length, 3)
+y_targets = []   # Target states: list of arrays, each array is (3,)
 sequence_run_ids = [] # Corresponding run_id for each sequence
 
-print(f"Creating sequences with length {sequence_length}...")
+print(f"Creating sequences with length {sequence_length} using {feature_cols}...")
 
 # Process each run separately
 for run_id, group in df.groupby('run_id'):
-    # Sort by time just in case (should be sorted from solve_ivp t_eval)
+    # Sort by time just in case
     group = group.sort_values('time')
-    theta_run = group['theta'].values
-    omega_run = group['omega'].values
+
+    # Extract the required feature columns as a numpy array
+    features_run = group[feature_cols].values # Shape: (num_points_in_run, 3)
 
     # Create sequences for this run
-    # A sequence starts at index i and ends at i + sequence_length - 1
-    # The target is at index i + sequence_length
-    # So, valid start indices for a sequence are from 0 up to len(run) - sequence_length - 1
     for i in range(len(group) - sequence_length):
-        # Input features: Sequence of (theta, omega) pairs
-        input_seq = np.vstack([theta_run[i : i + sequence_length],
-                               omega_run[i : i + sequence_length]]).T # Transpose to get (length, 2)
+        # Input features: Sequence of [sin, cos, omega] pairs
+        input_seq = features_run[i : i + sequence_length, :] # Shape: (sequence_length, 3)
 
-        # Target: (theta, omega) at the next time step
-        target = np.array([theta_run[i + sequence_length],
-                           omega_run[i + sequence_length]])
+        # Target: [sin, cos, omega] at the next time step
+        target = features_run[i + sequence_length, :] # Shape: (3,)
 
         X_sequences.append(input_seq)
         y_targets.append(target)
@@ -57,8 +63,8 @@ for run_id, group in df.groupby('run_id'):
 print(f"Created {len(X_sequences)} total sequences.")
 
 # Convert lists to numpy arrays
-X_sequences = np.array(X_sequences) # Shape: (num_sequences, sequence_length, 2)
-y_targets = np.array(y_targets)     # Shape: (num_sequences, 2)
+X_sequences = np.array(X_sequences) # Shape: (num_sequences, sequence_length, 3)
+y_targets = np.array(y_targets)     # Shape: (num_sequences, 3)
 sequence_run_ids = np.array(sequence_run_ids) # Shape: (num_sequences,)
 
 print(f"X_sequences shape: {X_sequences.shape}")
@@ -103,12 +109,11 @@ print(f"X_test shape: {X_test.shape}, y_test shape: {y_test.shape}")
 
 # --- 4. Scale Data ---
 # Scale features (X) and targets (y) separately
-# X scaler needs to handle the 3D shape (num_sequences, sequence_length, n_features)
-# y scaler handles the 2D shape (num_sequences, n_features)
+# Now features are [sin_theta, cos_theta, omega] (3 features)
+# Targets are [sin_theta_next, cos_theta_next, omega_next] (3 targets)
 
-# For X, we need to reshape it temporarily to (num_sequences * sequence_length, n_features)
-# to fit the scaler, then reshape back.
-X_train_reshaped = X_train.reshape(-1, X_train.shape[-1]) # -1 infers size, shape[-1] is 2 (theta, omega)
+# For X, we need to reshape it temporarily
+X_train_reshaped = X_train.reshape(-1, X_train.shape[-1]) # Shape[-1] is now 3
 X_val_reshaped = X_val.reshape(-1, X_val.shape[-1])
 X_test_reshaped = X_test.reshape(-1, X_test.shape[-1])
 
@@ -121,13 +126,13 @@ X_train_scaled_reshaped = X_scaler.transform(X_train_reshaped)
 X_val_scaled_reshaped = X_scaler.transform(X_val_reshaped)
 X_test_scaled_reshaped = X_scaler.transform(X_test_reshaped)
 
-# Reshape back to (num_sequences, sequence_length, n_features)
+# Reshape back to (num_sequences, sequence_length, n_features=3)
 X_train_scaled = X_train_scaled_reshaped.reshape(X_train.shape)
 X_val_scaled = X_val_scaled_reshaped.reshape(X_val.shape)
 X_test_scaled = X_test_scaled_reshaped.reshape(X_test.shape)
 
 
-# Fit y scaler ONLY on the training data (which is already 2D)
+# Fit y scaler ONLY on the training data (now 3 targets)
 y_scaler = StandardScaler()
 y_scaler.fit(y_train)
 
@@ -142,16 +147,15 @@ print("\nData scaled.")
 # --- 5. Save Processed Data and Scalers ---
 print(f"\nSaving processed data and scalers to {output_dir}...")
 
-np.save(os.path.join(output_dir, "X_train.npy"), X_train_scaled)
-np.save(os.path.join(output_dir, "y_train.npy"), y_train_scaled)
-np.save(os.path.join(output_dir, "X_val.npy"), X_val_scaled)
-np.save(os.path.join(output_dir, "y_val.npy"), y_val_scaled)
-np.save(os.path.join(output_dir, "X_test.npy"), X_test_scaled)
-np.save(os.path.join(output_dir, "y_test.npy"), y_test_scaled)
+np.save(os.path.join(output_dir, "X_train_sincos.npy"), X_train_scaled)
+np.save(os.path.join(output_dir, "y_train_sincos.npy"), y_train_scaled)
+np.save(os.path.join(output_dir, "X_val_sincos.npy"), X_val_scaled)
+np.save(os.path.join(output_dir, "y_val_sincos.npy"), y_val_scaled)
+np.save(os.path.join(output_dir, "X_test_sincos.npy"), X_test_scaled)
+np.save(os.path.join(output_dir, "y_test_sincos.npy"), y_test_scaled)
 
 # Save scalers (need joblib or pickle)
-import joblib
-joblib.dump(X_scaler, os.path.join(output_dir, "X_scaler.pkl"))
-joblib.dump(y_scaler, os.path.join(output_dir, "y_scaler.pkl"))
+joblib.dump(X_scaler, os.path.join(output_dir, "X_scaler_sincos.pkl"))
+joblib.dump(y_scaler, os.path.join(output_dir, "y_scaler_sincos.pkl"))
 
 print("Processed data and scalers saved.")
