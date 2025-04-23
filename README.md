@@ -49,7 +49,7 @@ This project simulates the dynamics of a driven damped pendulum and utilizes a L
     *   Saves the best trained model to `trained_model_sincos/best_lstm_model_sincos.keras`.
     *   Plots the training and validation loss/MAE history.
 
-4.  **`evaluate`**:
+4.  **`evaluate.py`**:
     *   Loads the best trained model (`.keras`) and the scaled test data/scalers.
     *   Evaluates single-step prediction performance on the test set.
     *   Inverse transforms the scaled predictions and actual values (`[sin, cos, omega]`).
@@ -98,24 +98,24 @@ Run the scripts in the following order:
 
 1.  **Generate Simulation Data:**
     ```bash
-    python simulate.py
+    python simulate_pendulum.py
     ```
     (This creates `pendulum_data/combined_pendulum_data.csv`)
 
 2.  **Preprocess Data:**
     ```bash
-    python preprocess_sincos.py
+    python process_data.py
     ```
     (This creates the `processed_data_sincos/` directory with `.npy` and `.pkl` files)
 
 3.  **Train the Model:**
     ```bash
-    python train_sincos.py
+    python train_model.py
     ```
     (This creates the `trained_model_sincos/` directory with the `.keras` model file)
 
 4.  **Evaluate and Visualize:**
     ```bash
-    python evaluate_sincos.py
+    python evaluate.py
     ```
     (This prints evaluation metrics and displays the result plots)
