@@ -26,12 +26,12 @@ This project simulates the dynamics of a driven damped pendulum and utilizes a L
 
 ## Project Structure & Scripts
 
-1.  **`simulate.py`**:
+1.  **`simulate_pendulum.py`**:
     *   Defines the pendulum's ordinary differential equations (ODEs).
     *   Runs multiple simulations using `scipy.integrate.solve_ivp` with varying initial conditions (`theta_init`, `omega_init`).
     *   Saves the raw time series data (`time`, `theta`, `omega`, `run_id`) for all runs into `pendulum_data/combined_pendulum_data.csv`.
 
-2.  **`preprocess_sincos.py`**:
+2.  **`process_data.py`**:
     *   Loads the raw simulation data from the CSV.
     *   Calculates `sin(theta)` and `cos(theta)` features.
     *   Creates input sequences (shape: `(sequence_length, 3)`) using `[sin(theta), cos(theta), omega]` from previous time steps.
@@ -40,7 +40,7 @@ This project simulates the dynamics of a driven damped pendulum and utilizes a L
     *   Applies `StandardScaler` (fitted on training data only) to scale both input features and target outputs.
     *   Saves the scaled data arrays (`.npy`) and the fitted scalers (`.pkl`) to the `processed_data_sincos/` directory.
 
-3.  **`train_sincos.py`**:
+3.  **`train_model.py`**:
     *   Loads the preprocessed and scaled training and validation data.
     *   Defines the LSTM model architecture using Keras (LSTM layer, Dropout, Dense output layer with 3 units).
     *   Compiles the model (Adam optimizer, MSE loss).
@@ -49,7 +49,7 @@ This project simulates the dynamics of a driven damped pendulum and utilizes a L
     *   Saves the best trained model to `trained_model_sincos/best_lstm_model_sincos.keras`.
     *   Plots the training and validation loss/MAE history.
 
-4.  **`evaluate_sincos.py`**:
+4.  **`evaluate`**:
     *   Loads the best trained model (`.keras`) and the scaled test data/scalers.
     *   Evaluates single-step prediction performance on the test set.
     *   Inverse transforms the scaled predictions and actual values (`[sin, cos, omega]`).
